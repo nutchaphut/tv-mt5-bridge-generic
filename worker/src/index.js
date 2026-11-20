@@ -17,20 +17,43 @@ const at = r => r.fired_at || r.received_at;
 const tgOn = env => !!(env.TG_TOKEN && env.TG_CHAT);
 const text = (body, status = 200) => new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 
+// The tables, created on the first request of each Worker instance (no separate schema step).
+const SCHEMA = [
+  // every alert, and the Worker's own time exits / the EA's stop reports. ev: entry | exit;
+  // blocked: null = traded, else news | dayloss | session | weekend | position | no position; tg_msg: the Telegram post
+  `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at TEXT NOT NULL, fired_at TEXT,
+    symbol TEXT NOT NULL, ev TEXT NOT NULL, side TEXT, price REAL, sl REAL, reason TEXT, blocked TEXT,
+    test INTEGER NOT NULL DEFAULT 0, news_title TEXT, news_min INTEGER, tg_msg INTEGER)`,
+  'CREATE INDEX IF NOT EXISTS events_symbol ON events (symbol, test, id)',
+  // the EA's reports. kind: open | skip | close | stop | stopout | manual
+  `CREATE TABLE IF NOT EXISTS fills (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER NOT NULL, received_at TEXT NOT NULL,
+    kind TEXT NOT NULL, ok INTEGER NOT NULL, price REAL, lots REAL, profit REAL, risk REAL, msg TEXT, acct TEXT,
+    test INTEGER NOT NULL DEFAULT 0, exec_at TEXT)`,
+  'CREATE INDEX IF NOT EXISTS fills_event ON fills (event_id)',
+  'CREATE TABLE IF NOT EXISTS news (ts TEXT PRIMARY KEY, title TEXT NOT NULL)',   // high-impact releases (UTC)
+  'CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT)',
+];
+let ready;
+const init = env => (ready ??= env.DB.batch(SCHEMA.map(s => env.DB.prepare(s))).catch(e => { ready = null; throw e; }));
+
 export default {
   async fetch(req, env, ctx) {
-    const url = new URL(req.url), p = url.pathname, hk = env.HOOK_KEY, ek = env.EA_KEY;
-    if (!hk || !ek) return text('set the HOOK_KEY and EA_KEY secrets', 500);
-    if (req.method === 'POST' && (p === `/hook/${hk}` || p === `/test/${hk}`)) return hook(req, env, ctx, p.startsWith('/test/'));
-    if (req.method === 'GET' && (p === `/orders/${ek}` || p === `/orders/${ek}/last`)) return orders(env, url, p.endsWith('/last'));
-    if (req.method === 'POST' && p === `/fills/${ek}`) return fills(req, env, ctx);
-    if (req.method === 'GET' && p === `/log/${hk}`) return log(env, url);
-    if (req.method === 'GET' && p === `/chart/${hk}`) return chartRoute(env, url);
-    if (req.method === 'GET' && p === `/run/${hk}`) return text(await run(env, url.searchParams.get('task'), Date.now(), true));
+    const url = new URL(req.url), p = url.pathname, k = env.KEY;
+    if (!k) return text('set the KEY secret: npx wrangler secret put KEY', 500);
+    await init(env);
+    if (req.method === 'POST' && (p === `/hook/${k}` || p === `/test/${k}`)) return hook(req, env, ctx, p.startsWith('/test/'));
+    if (req.method === 'GET' && (p === `/orders/${k}` || p === `/orders/${k}/last`)) return orders(env, url, p.endsWith('/last'));
+    if (req.method === 'POST' && p === `/fills/${k}`) return fills(req, env, ctx);
+    if (req.method === 'GET' && p === `/log/${k}`) return log(env, url);
+    if (req.method === 'GET' && p === `/chart/${k}`) return chartRoute(env, url);
+    if (req.method === 'GET' && p === `/run/${k}`) return text(await run(env, url.searchParams.get('task'), Date.now(), true));
     return text('not found', 404);
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil((async () => { for (const task of ['exits', 'news', 'summary']) await run(env, task, Date.now()).catch(e => console.log(task, e.message)); })());
+    ctx.waitUntil((async () => {
+      await init(env);
+      for (const task of ['exits', 'news', 'summary']) await run(env, task, Date.now()).catch(e => console.log(task, e.message));
+    })());
   },
 };
 
@@ -137,7 +160,7 @@ async function fills(req, env, ctx) {
   return text('ok');
 }
 
-// ---- cron tasks (every 5 minutes) and /run/<HOOK_KEY>?task= for trying them by hand ----
+// ---- cron tasks (every 5 minutes) and /run/<KEY>?task= for trying them by hand ----
 async function run(env, task, now, force = false) {
   const st = async k => (await env.DB.prepare('SELECT v FROM state WHERE k = ?').bind(k).first())?.v;
   const put = (k, v) => env.DB.prepare('INSERT INTO state (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').bind(k, String(v)).run();

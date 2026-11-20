@@ -12,7 +12,7 @@ TradingView alert ──webhook──▶ Worker (Cloudflare, D1 database)
 
 - **Any alert works**: an indicator alert or a Pine strategy's order alerts. The Worker holds no strategy logic.
 - **One position per symbol.** An entry while that symbol is open is stored and posted as blocked, never traded.
-- **Paper book**: every traded alert is booked in R (move ÷ stop distance) after a per-symbol cost. `GET /log/<HOOK_KEY>` downloads it as CSV.
+- **Paper book**: every traded alert is booked in R (move ÷ stop distance) after a per-symbol cost. `GET /log/<KEY>` downloads it as CSV.
 - **The EA** sizes each trade so the stop loses `RiskPct` % of the balance, sends the stop with the order, closes on the exit alert, and reports everything back. Broker stops and hand closes are reported too, and close the paper trade.
 - **Telegram never shows** an account number, balance, lot size or money: prices, R and risk % only.
 
@@ -21,25 +21,27 @@ TradingView alert ──webhook──▶ Worker (Cloudflare, D1 database)
 
 ## 1. Worker (Cloudflare)
 
-Needs Node.js 18+ and a free Cloudflare account.
+Needs a free Cloudflare account. Pick one way:
+
+**One click:** [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nutchaphut/tv-mt5-bridge-generic/tree/main/worker)
+
+It copies the Worker to your GitHub, creates the database, and asks for `KEY` (plus the optional Telegram secrets).
+
+**From a terminal** (Node.js 22+):
 
 ```bash
 cd worker
 npm install
-cp wrangler.toml.example wrangler.toml
 npx wrangler login
-npx wrangler d1 create tv-mt5-bridge                 # put the database_id it prints into wrangler.toml
-npx wrangler d1 execute tv-mt5-bridge --remote --file=schema.sql
-npx wrangler secret put HOOK_KEY                      # a long random string (TradingView's URL key)
-npx wrangler secret put EA_KEY                        # another long random string (the EA's key)
-npx wrangler secret put TG_TOKEN                      # optional: Telegram bot token
-npx wrangler secret put TG_CHAT                       # optional: chat or channel id
-npx wrangler deploy                                   # prints https://tv-mt5-bridge.<you>.workers.dev
+npx wrangler deploy              # creates the database, prints https://tv-mt5-bridge.<you>.workers.dev
+npx wrangler secret put KEY      # a long random string
+npx wrangler secret put TG_TOKEN # optional: Telegram bot token
+npx wrangler secret put TG_CHAT  # optional: chat or channel id
 ```
 
-Random keys: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`.
+A random key: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`. The Worker creates its tables itself.
 
-Settings are the `[vars]` in `wrangler.toml`, each explained there:
+Settings are the `[vars]` in `worker/wrangler.toml`, each explained there:
 - **Book and posts:** risk %, per-symbol costs, chart tickers, time zone.
 - **News block:** currencies, minutes before and after a release.
 - **Limits:** daily loss cap in R, trading hours, weekend cut-off, maximum hold time.
@@ -58,7 +60,7 @@ Change one, then `npx wrangler deploy` again.
 
 ## 2. TradingView alert
 
-Webhook URL: `https://<your-worker>/hook/<HOOK_KEY>`. The message must be JSON.
+Webhook URL: `https://<your-worker>/hook/<KEY>`. The message must be JSON.
 
 ```json
 {"symbol":"XAUUSD","side":"long","price":{{close}},"sl":2644.9,"time":"{{timenow}}"}
@@ -82,10 +84,10 @@ strategy.exit("X", "L", stop = stop, alert_message = '{"symbol":"' + syminfo.tic
 
 Then create the alert on the strategy with the message `{{strategy.order.alert_message}}`.
 
-**Testing:** post to `https://<your-worker>/test/<HOOK_KEY>` instead. It's stored as a test, posted with "🧪 TEST", and only an EA with `TestQueue = true` takes it.
+**Testing:** post to `https://<your-worker>/test/<KEY>` instead. It's stored as a test, posted with "🧪 TEST", and only an EA with `TestQueue = true` takes it.
 
 ```bash
-curl -X POST https://<your-worker>/test/<HOOK_KEY> -d '{"symbol":"XAUUSD","side":"long","price":2650.4,"sl":2644.9}'
+curl -X POST https://<your-worker>/test/<KEY> -d '{"symbol":"XAUUSD","side":"long","price":2650.4,"sl":2644.9}'
 ```
 
 ## 3. MT5 EA
@@ -97,7 +99,7 @@ curl -X POST https://<your-worker>/test/<HOOK_KEY> -d '{"symbol":"XAUUSD","side"
 | Input | Meaning |
 |---|---|
 | `WorkerUrl` | `https://<your-worker>`, no trailing slash |
-| `EaKey` | the `EA_KEY` secret |
+| `Key` | the `KEY` secret |
 | `RiskPct` | % of balance lost if the stop is hit |
 | `SignalSymbol` | the alert's symbol to trade on this chart; empty = the chart symbol starting with it (`XAUUSD` → `XAUUSDm`) |
 | `TestQueue` | `true` = take only test alerts |
@@ -113,13 +115,13 @@ curl -X POST https://<your-worker>/test/<HOOK_KEY> -d '{"symbol":"XAUUSD","side"
 
 | Route | Who |
 |---|---|
-| `POST /hook/<HOOK_KEY>` | TradingView alerts |
-| `POST /test/<HOOK_KEY>` | test alerts |
-| `GET /orders/<EA_KEY>?after=<id>&test=0` · `/orders/<EA_KEY>/last` | the EA's order queue |
-| `POST /fills/<EA_KEY>` | the EA's reports |
-| `GET /log/<HOOK_KEY>` | paper book CSV (`?test=1` for tests) |
-| `GET /chart/<HOOK_KEY>?id=<entry id>` | chart picture of one trade |
-| `GET /run/<HOOK_KEY>?task=summary\|news\|exits` | run a cron task now |
+| `POST /hook/<KEY>` | TradingView alerts |
+| `POST /test/<KEY>` | test alerts |
+| `GET /orders/<KEY>?after=<id>&test=0` · `/orders/<KEY>/last` | the EA's order queue |
+| `POST /fills/<KEY>` | the EA's reports |
+| `GET /log/<KEY>` | paper book CSV (`?test=1` for tests) |
+| `GET /chart/<KEY>?id=<entry id>` | chart picture of one trade |
+| `GET /run/<KEY>?task=summary\|news\|exits` | run a cron task now |
 
 ## Development
 
@@ -127,7 +129,7 @@ curl -X POST https://<your-worker>/test/<HOOK_KEY> -d '{"symbol":"XAUUSD","side"
 cd worker
 node test.mjs        # unit tests
 node preview.mjs     # every Telegram text with sample values
-npx wrangler dev     # local Worker; apply schema.sql with --local first, put HOOK_KEY / EA_KEY in .dev.vars
+npx wrangler dev     # local Worker; copy .dev.vars.example to .dev.vars and set KEY
 ```
 
 ## Licence

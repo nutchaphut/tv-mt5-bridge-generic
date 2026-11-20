@@ -1,9 +1,9 @@
 //+------------------------------------------------------------------+
 //| SignalBridge.mq5 - executes the tv-mt5-bridge Worker's signals.   |
-//| Polls <WorkerUrl>/orders/<EaKey>, opens a market order with the    |
+//| Polls <WorkerUrl>/orders/<Key>, opens a market order with the      |
 //| stop sent with the entry, closes on the exit line, and reports     |
 //| every fill, skip and close (also broker stops and hand closes) to  |
-//| <WorkerUrl>/fills/<EaKey>.                                         |
+//| <WorkerUrl>/fills/<Key>.                                           |
 //| Attach to one chart per symbol. Tools > Options > Expert Advisors: |
 //| allow WebRequest for your Worker URL.                              |
 //| MIT licence. Not financial advice: run it on a demo account first. |
@@ -13,10 +13,10 @@
 #include <Trade/Trade.mqh>
 
 input string WorkerUrl    = "https://YOUR-WORKER.workers.dev"; // the Worker's address, no trailing slash
-input string EaKey        = "";       // the Worker's EA_KEY secret
+input string Key          = "";       // the Worker's KEY secret
 input double RiskPct      = 1.0;      // % of balance lost if the stop is hit
 input string SignalSymbol = "";       // signal symbol to trade here; "" = chart symbol starting with it (XAUUSD -> XAUUSDm)
-input bool   TestQueue    = false;    // true = take the Worker's test signals only (/test/<HOOK_KEY>)
+input bool   TestQueue    = false;    // true = take the Worker's test signals only (/test/<KEY>)
 input int    PollMs       = 2000;     // how often to ask the Worker (ms)
 input int    MaxAgeSec    = 60;       // skip signals older than this: never send a stale order
 input long   Magic        = 260101;   // marks this EA's positions
@@ -79,7 +79,7 @@ void Report(long id, string kind, bool ok, ulong deal, double price, double lots
                            profit == EMPTY_VALUE ? "null" : DoubleToString(profit, 2), DoubleToString(risk, 2), DealTimeUtcMs(deal), Acct());
    Print("SignalBridge: #", id, " ", kind, ok ? " OK " : " not done ", msg);
    // ponytail: kept in memory only, lost on an EA restart; write them to a file if Worker outages outlast restarts
-   if(ArraySize(pending) > 0 || !Post("/fills/" + EaKey, j))
+   if(ArraySize(pending) > 0 || !Post("/fills/" + Key, j))
    {
       int n = ArraySize(pending);
       if(n < 200) { ArrayResize(pending, n + 1); pending[n] = j; }
@@ -89,7 +89,7 @@ void Report(long id, string kind, bool ok, ulong deal, double price, double lots
 void FlushReports()
 {
    int sent = 0;
-   while(sent < ArraySize(pending) && Post("/fills/" + EaKey, pending[sent])) sent++;
+   while(sent < ArraySize(pending) && Post("/fills/" + Key, pending[sent])) sent++;
    if(sent > 0) ArrayRemove(pending, 0, sent);
 }
 
@@ -253,7 +253,7 @@ void WatchPosition()
 
 int OnInit()
 {
-   if(EaKey == "") { Alert("SignalBridge: set EaKey"); return INIT_PARAMETERS_INCORRECT; }
+   if(Key == "") { Alert("SignalBridge: set Key"); return INIT_PARAMETERS_INCORRECT; }
    lastId = -1;                                       // always re-sync: never replay old signals
    trade.SetExpertMagicNumber(Magic);
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -270,10 +270,10 @@ void OnTimer()
    string body;
    if(lastId < 0)                                      // start after the newest signal
    {
-      if(Get("/orders/" + EaKey + "/last?test=" + Q(), body)) { lastId = StringToInteger(body); Print("SignalBridge: synced after #", lastId); }
+      if(Get("/orders/" + Key + "/last?test=" + Q(), body)) { lastId = StringToInteger(body); Print("SignalBridge: synced after #", lastId); }
       return;
    }
-   if(Get("/orders/" + EaKey + "?after=" + (string)lastId + "&test=" + Q() + "&acct=" + Acct(), body) && StringLen(body) > 0)
+   if(Get("/orders/" + Key + "?after=" + (string)lastId + "&test=" + Q() + "&acct=" + Acct(), body) && StringLen(body) > 0)
    {
       string lines[];
       int n = StringSplit(body, '\n', lines);

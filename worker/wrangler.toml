@@ -1,4 +1,4 @@
-# Copy to wrangler.toml and fill in the database_id from `npx wrangler d1 create tv-mt5-bridge`.
+# Ready to use: `npx wrangler deploy` creates the D1 database on the first deploy and writes its id in here.
 name = "tv-mt5-bridge"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
@@ -10,7 +10,6 @@ crons = ["*/5 * * * *"]          # time exits, news calendar refresh, daily summ
 [[d1_databases]]
 binding = "DB"
 database_name = "tv-mt5-bridge"
-database_id = "PUT-YOUR-DATABASE-ID-HERE"
 
 [vars]
 RISK_PCT = "1"                   # risk % a trade, only to show % next to R in Telegram (the EA sizes with its own RiskPct)
@@ -28,7 +27,6 @@ SUMMARY_UTC_HOUR = "21"          # daily Telegram summary at this UTC hour
 TV_IPS_ONLY = "0"                # "1" = accept /hook only from TradingView's webhook addresses
 
 # Secrets (never in this file): npx wrangler secret put <NAME>
-#   HOOK_KEY   random string in the TradingView webhook URL: https://<worker>/hook/<HOOK_KEY>
-#   EA_KEY     random string the MT5 EA uses: /orders/<EA_KEY>, /fills/<EA_KEY>
+#   KEY        a long random string: TradingView posts to https://<worker>/hook/<KEY>, the EA uses it too
 #   TG_TOKEN   Telegram bot token (from @BotFather)       - optional: no Telegram without it
 #   TG_CHAT    Telegram chat or channel id (e.g. -100...) - optional

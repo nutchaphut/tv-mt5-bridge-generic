@@ -9,5 +9,18 @@
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "KEY": {
+        "description": "A long random string, for example from `openssl rand -hex 24`. TradingView posts to `https://<worker>/hook/<KEY>` and the MT5 EA uses the same key. Keep it secret."
+      },
+      "TG_TOKEN": {
+        "description": "Optional. Telegram bot token from @BotFather. Leave empty for no Telegram posts."
+      },
+      "TG_CHAT": {
+        "description": "Optional. Telegram chat or channel id (a channel starts with `-100`). The bot must be an admin there."
+      }
+    }
   }
 }
