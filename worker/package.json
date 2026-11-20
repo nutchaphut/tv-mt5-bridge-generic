@@ -1,0 +1,13 @@
+{
+  "name": "tv-mt5-bridge-generic",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test.mjs",
+    "preview": "node preview.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

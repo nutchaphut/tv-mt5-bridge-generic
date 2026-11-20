@@ -1,0 +1,34 @@
+# Copy to wrangler.toml and fill in the database_id from `npx wrangler d1 create tv-mt5-bridge`.
+name = "tv-mt5-bridge"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[triggers]
+crons = ["*/5 * * * *"]          # time exits, news calendar refresh, daily summary
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tv-mt5-bridge"
+database_id = "PUT-YOUR-DATABASE-ID-HERE"
+
+[vars]
+RISK_PCT = "1"                   # risk % a trade, only to show % next to R in Telegram (the EA sizes with its own RiskPct)
+COSTS = '{"XAUUSD":0.3}'         # round-trip cost per symbol in price units (spread + commission), for the paper book's Rnet
+CHART_SYMBOLS = '{"XAUUSD":"GC=F","US500":"ES=F","USTEC":"NQ=F","EURUSD":"EURUSD=X"}'   # alert symbol -> Yahoo ticker; no entry = no picture
+TZ = "UTC"                       # time zone for Telegram times and chart axes, e.g. "Europe/London", "America/New_York"
+NEWS_CURRENCIES = "USD"          # high-impact releases of these currencies block entries
+NEWS_BEFORE_MIN = "30"           # block entries this many minutes before a release ("0" with NEWS_AFTER_MIN "0" = off)
+NEWS_AFTER_MIN = "2"             # ... and this many minutes after it
+DAY_LOSS_R = "0"                 # no new entries once the day's closed trades reach -N R (UTC day); "0" = off
+SESSION_UTC = ""                 # entries only inside "HH:MM-HH:MM" UTC, e.g. "07:00-20:00" (may wrap midnight); "" = always
+WEEKEND_CUTOFF_UTC = ""          # no entries from Friday HH:MM UTC to the Sunday 22:00 UTC reopen, e.g. "20:00"; "" = off
+MAX_HOLD_MIN = ""                # close any trade held this long (time exit); "" = off
+SUMMARY_UTC_HOUR = "21"          # daily Telegram summary at this UTC hour
+TV_IPS_ONLY = "0"                # "1" = accept /hook only from TradingView's webhook addresses
+
+# Secrets (never in this file): npx wrangler secret put <NAME>
+#   HOOK_KEY   random string in the TradingView webhook URL: https://<worker>/hook/<HOOK_KEY>
+#   EA_KEY     random string the MT5 EA uses: /orders/<EA_KEY>, /fills/<EA_KEY>
+#   TG_TOKEN   Telegram bot token (from @BotFather)       - optional: no Telegram without it
+#   TG_CHAT    Telegram chat or channel id (e.g. -100...) - optional

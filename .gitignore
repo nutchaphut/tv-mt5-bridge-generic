@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+dist/
+worker/wrangler.toml
+.dev.vars
+*.ex5
+*.set
+*.log
